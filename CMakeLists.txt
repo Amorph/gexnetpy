@@ -6,6 +6,7 @@ project(gexnetpy)
 
 set(library_HEADERS
 	include/pch.hpp
+	include/clist.hpp
 )
 set(library_SOURCES
 	src/pch.cpp
@@ -21,4 +22,4 @@ target_include_directories(gexnetpy
     PUBLIC ${PROJECT_SOURCE_DIR}/include
 )
 
-add_precompiled_header(gexnetpy pch.hpp SOURCE_CXX src/pch.cpp FORCEINCLUDE)
+# add_precompiled_header(gexnetpy pch.hpp SOURCE_CXX src/pch.cpp FORCEINCLUDE)
