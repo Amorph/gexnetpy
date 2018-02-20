@@ -1,5 +1,6 @@
 #include "pch.hpp"
 #include <sstream>
+#include <iomanip>
 
 #include "clist.hpp"
 #include <pybind11/stl.h>
@@ -12,11 +13,17 @@ extern "C"
 
 class PyNetworkNode
 {
+	friend class PyNetworkLink;
 public:
 	PyNetworkNode(NetworkNode* node) 
 		:mNode(node) {}
-	Number bias() { return mNode->bias; }
-	Activation_func func() { return mNode->activation_function; }
+
+	bool			valid() { return mNode != nullptr; }
+
+	Number			get_bias() { if (!mNode) return -INFINITY; return mNode->bias; }
+	void			set_bias(Number number) { mNode->bias = number; }
+	Activation_func	get_func() { if (!mNode) return std::numeric_limits<Activation_func>::min(); return mNode->activation_function; }
+	void			set_func(Activation_func func) { mNode->activation_function = func; }
 protected:
 	friend std::ostream& operator<<(std::ostream& out, const PyNetworkNode& h);
 	NetworkNode* mNode;
@@ -36,9 +43,13 @@ public:
 	PyNetworkLink(NetworkLink* link)
 		:mLink(link) {}
 
-	PyNetworkNode get_input() { return PyNetworkNode(mLink->input); }
-	PyNetworkNode get_output() { return PyNetworkNode(mLink->output); }
-	Number get_weight() { return mLink->weight; }
+	PyNetworkNode	get_input() { return PyNetworkNode(mLink->input); }
+	void			set_input(PyNetworkNode* node) { mLink->input = node ? node->mNode : nullptr; }
+
+	PyNetworkNode	get_output() { return PyNetworkNode(mLink->output); }
+	void			set_output(PyNetworkNode* node) { mLink->output = node ? node->mNode : nullptr; }
+	Number			get_weight() { if (!mLink) throw pybind11::stop_iteration(); return mLink->weight; }
+	void			set_weight(Number weight) { mLink->weight = weight; }
 protected:
 	friend std::ostream& operator<<(std::ostream& out, const PyNetworkLink& h);
 	NetworkLink* mLink;
@@ -48,7 +59,7 @@ std::ostream& operator<<(std::ostream& ss, const PyNetworkLink& h)
 {
 	if (!h.mLink)
 		return ss << "[NULL]";
-	return ss << "[input]:";
+	return ss << "[0x" << std::hex << h.mLink->input << "-" << h.mLink->weight << "-0x" << h.mLink->output << "]";
 }
 
 class PyNetwork
@@ -91,13 +102,15 @@ void bind_network(py::module &m)
 	//py::make_iterator
 	m.def("network_create", &py_network_create);
 	py::class_<PyNetworkNode>(m, "NetworkNode")
-		.def_property_readonly("bias", &PyNetworkNode::bias)
-		.def("__repr__", [](PyNetworkNode &a) { std::ostringstream ss; ss << a; return ss.str(); });
+		.def_property("bias", &PyNetworkNode::get_bias, &PyNetworkNode::set_bias)
+		.def_property("func", &PyNetworkNode::get_func, &PyNetworkNode::set_func)
+		.def("__repr__", [](PyNetworkNode &a) { std::ostringstream ss; ss << a; return ss.str(); })
+		.def("__bool__", [](PyNetworkNode &a) { return a.valid(); });
 
 	py::class_<PyNetworkLink>(m, "NetworkLink")
-		.def_property_readonly("input", &PyNetworkLink::get_input)
-		.def_property_readonly("output", &PyNetworkLink::get_output)
-		.def_property_readonly("weight", &PyNetworkLink::get_weight)
+		.def_property("input", &PyNetworkLink::get_input, &PyNetworkLink::set_input, py::arg().none(true))
+		.def_property("output", &PyNetworkLink::get_output, &PyNetworkLink::set_output)
+		.def_property("weight", &PyNetworkLink::get_weight, &PyNetworkLink::set_weight)
 		.def("__repr__", [](PyNetworkLink &a) { std::ostringstream ss; ss << a; return ss.str(); });
 
 	bind_clist<PyNetwork::PyNetworkNodeList>(m, "NetworkNodeList");
