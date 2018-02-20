@@ -28,6 +28,7 @@ class PyCList
 {
 public:
 	typedef PyCListIterator<T, WrapType> Iterator;
+	typedef PyCList<T, WrapType> ThisClass;
 public:
 	PyCList()
 		: mList(nullptr)
@@ -50,9 +51,40 @@ public:
 		return WrapType(mList + index);
 	}
 	Iterator iter() { return Iterator(mList, mSize); }
+
+	std::string to_string()
+	{
+		std::ostringstream ss;
+		ss << "PyList [";
+		for (size_t i = 0; i < mSize; i++)
+		{
+			ss << get(i);
+			if (i + 1 < mSize)
+			{
+				ss << ", ";
+			}
+		}
+		ss << "]";
+		return ss.str();
+	}
+
 protected:
 	T*		mList;
 	size_t	mSize;
 };
+
+template<typename T>
+void bind_clist(pybind11::module &m, const std::string& pyName)
+{
+	pybind11::class_<T::Iterator>(m, (pyName + "Iterator").c_str())
+		.def("__iter__", &T::Iterator::iter)
+		.def("__next__", &T::Iterator::next);
+	pybind11::class_<T>(m, pyName.c_str())
+		.def("__len__", &T::size)
+		.def("__getitem__", &T::get)
+		.def("__iter__", &T::iter)
+		.def("__repr__", &T::to_string);
+}
+
 
 #endif
