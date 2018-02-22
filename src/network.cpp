@@ -43,11 +43,11 @@ public:
 	PyNetworkLink(NetworkLink* link)
 		:mLink(link) {}
 
-	PyNetworkNode	get_input() { return PyNetworkNode(mLink->input); }
-	void			set_input(PyNetworkNode* node) { mLink->input = node ? node->mNode : nullptr; }
+	size_t			get_input() { return mLink->input; }
+	void			set_input(size_t node) { mLink->input = node; }
 
-	PyNetworkNode	get_output() { return PyNetworkNode(mLink->output); }
-	void			set_output(PyNetworkNode* node) { mLink->output = node ? node->mNode : nullptr; }
+	size_t			get_output() { return mLink->output; }
+	void			set_output(size_t node) { mLink->output = node; }
 	Number			get_weight() { if (!mLink) throw pybind11::stop_iteration(); return mLink->weight; }
 	void			set_weight(Number weight) { mLink->weight = weight; }
 protected:
@@ -59,7 +59,8 @@ std::ostream& operator<<(std::ostream& ss, const PyNetworkLink& h)
 {
 	if (!h.mLink)
 		return ss << "[NULL]";
-	return ss << "[0x" << std::hex << h.mLink->input << "-" << h.mLink->weight << "-0x" << h.mLink->output << "]";
+	return ss << "[0x" << std::hex << h.mLink->input 
+		<< "-" << h.mLink->weight << "-0x" << h.mLink->output << "]";
 }
 
 class PyNetwork
@@ -101,6 +102,7 @@ void bind_network(py::module &m)
 {
 	//py::make_iterator
 	m.def("network_create", &py_network_create);
+	m.attr("NULL_LINK") = NULL_LINK;
 	py::class_<PyNetworkNode>(m, "NetworkNode")
 		.def_property("bias", &PyNetworkNode::get_bias, &PyNetworkNode::set_bias)
 		.def_property("func", &PyNetworkNode::get_func, &PyNetworkNode::set_func)
