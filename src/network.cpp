@@ -9,6 +9,8 @@
 extern "C"
 {
 	#include "network.h"
+	#include "gexnet.h"
+	#include "stream.h"
 }
 
 /*
@@ -95,10 +97,84 @@ protected:
 
 */
 
+class PyGNStream
+{
+public:
+	PyGNStream(struct GNStream* stream)
+		:stream_(stream)
+	{
+
+	}
+	~PyGNStream()
+	{
+		stream_->system->stream->destroy(stream_);
+	}
+	void load(const pybind11::list& init_data)
+	{
+		struct GNSystem* G = stream_->system;
+		GNStreamLockData* lock = G->stream->lock(stream_, 0, init_data.size(), 0);
+		uint8_t* data = (uint8_t*)lock->data;
+		for (size_t i = 0; i < lock->count; i++)
+		{
+			if (lock->type == GN_TYPE_NUMBER)
+			{
+				GNNumber num = init_data[i].cast<GNNumber>();
+				*((GNNumber*)data) = num;
+			}else if (lock->type == GN_TYPE_INDEX)
+			{
+				GNIndex num = init_data[i].cast<GNIndex>();
+				*((GNIndex*)data) = num;
+			}
+			data += lock->element_size;
+		}
+		G->stream->unlock(lock);
+	}
+	void clear() { stream_->system->stream->clear(stream_);	}
+protected:
+	struct GNStream* stream_;
+};
+
+class PyGNSystem
+{
+public:
+
+public:
+	PyGNSystem()
+	{
+		G = gexnet_native_init(NULL);
+	}
+	PyGNStream* create_stream(GNType type, const pybind11::list& init_data)
+	{
+		struct GNStream* stream = G->create_stream(G, type, init_data.size(), NULL);
+		PyGNStream* pyStream = new PyGNStream(stream);
+
+		pyStream->load(init_data);
+
+		return pyStream;
+	}
+protected:
+	struct GNSystem* G;
+};
+
 namespace py = pybind11;
 
 void bind_network(py::module &m)
 {
+	m.attr("GN_TYPE_UNKNOWN") = GN_TYPE_UNKNOWN;
+	m.attr("GN_TYPE_FLOAT") = GN_TYPE_FLOAT;
+	m.attr("GN_TYPE_INTEGER") = GN_TYPE_INTEGER;
+	m.attr("GN_TYPE_INDEX") = GN_TYPE_INDEX;
+	m.attr("GN_TYPE_INDEX_INDEX") = GN_TYPE_INDEX_INDEX;
+	m.attr("GN_TYPE_LINK") = GN_TYPE_LINK;
+	m.attr("GN_TYPE_NUMBER") = GN_TYPE_NUMBER;
+
+	py::class_<PyGNStream>(m, "GNStream")
+		.def("clear", &PyGNStream::clear)
+		.def("load", &PyGNStream::load);
+
+	py::class_<PyGNSystem>(m, "GNSystem")
+		.def(py::init<>())
+		.def("create_stream", &PyGNSystem::create_stream);
 	//m.def("network_create", &py_network_create);
 	/*
 	//py::make_iterator
