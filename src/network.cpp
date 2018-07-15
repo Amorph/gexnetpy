@@ -97,6 +97,100 @@ protected:
 
 */
 
+class PyGNStreamLockData
+{
+public:
+	PyGNStreamLockData(struct GNStreamLockData* lock)
+	{
+		lock_ = lock;
+		pydata = pybind11::list(lock->count);
+		switch (lock->type)
+		{
+		case GN_TYPE_FLOAT:
+		{
+			GNNumber* data = (GNNumber*)lock->data;
+			for (size_t i = 0; i < lock->count; i++)
+				pydata[i] = pybind11::cast(data[i]);
+		}break;
+		case GN_TYPE_INTEGER:
+		{
+			GNInteger* data = (GNInteger*)lock->data;
+			for (size_t i = 0; i < lock->count; i++)
+				pydata[i] = pybind11::cast(data[i]);
+		}break;
+		case GN_TYPE_INDEX:
+		{
+			GNIndex* data = (GNIndex*)lock->data;
+			for (size_t i = 0; i < lock->count; i++)
+				pydata[i] = pybind11::cast(data[i]);
+		}break;
+		case GN_TYPE_INDEX_INDEX:
+		{
+			GNLink* data = (GNLink*)lock->data;
+			for (size_t i = 0; i < lock->count; i++)
+			{
+				pybind11::tuple link(2);
+				link[0] = data[i].input;
+				link[1] = data[i].output;
+				pydata[i] = link;
+			}
+		}break;
+		}
+	}
+	~PyGNStreamLockData()
+	{
+		if(lock_)
+			lock_->stream->system->stream->unlock(lock_);
+	}
+
+	void unlock()
+	{
+		switch (lock_->type)
+		{
+		case GN_TYPE_FLOAT:
+		{
+			GNNumber* data = (GNNumber*)lock_->data;
+			for (size_t i = 0; i < lock_->count; i++)
+				data[i] = pydata[i].cast<GNNumber>();
+		}break;
+		case GN_TYPE_INTEGER:
+		{
+			GNInteger* data = (GNInteger*)lock_->data;
+			for (size_t i = 0; i < lock_->count; i++)
+				data[i] = pydata[i].cast<GNInteger>();
+		}break;
+		case GN_TYPE_INDEX:
+		{
+			GNIndex* data = (GNIndex*)lock_->data;
+			for (size_t i = 0; i < lock_->count; i++)
+				data[i] = pydata[i].cast<GNIndex>();
+		}break;
+		case GN_TYPE_INDEX_INDEX:
+		{
+			GNLink* data = (GNLink*)lock_->data;
+			
+			for (size_t i = 0; i < lock_->count; i++)
+			{
+				pybind11::tuple& link = pydata[i].cast<pybind11::tuple>();
+				data[i].input = link[0].cast<GNIndex>();
+				data[i].input = link[1].cast<GNIndex>();
+			}
+		}break;
+		}
+		lock_->stream->system->stream->unlock(lock_);
+		lock_ = NULL;
+		pydata = pybind11::list();
+	}
+	GNType type() const { return lock_? lock_->type : GN_TYPE_UNKNOWN; }
+	GNIndex count() const { return lock_ ? lock_->count : 0; }
+	size_t element_size() const { return lock_ ? lock_->element_size : 0; }
+
+protected:
+	struct GNStreamLockData* lock_;
+public:
+	pybind11::list pydata;
+};
+
 class PyGNStream
 {
 public:
@@ -109,6 +203,7 @@ public:
 	{
 		stream_->system->stream->destroy(stream_);
 	}
+
 	void load(const pybind11::list& init_data)
 	{
 		struct GNSystem* G = stream_->system;
@@ -116,20 +211,49 @@ public:
 		uint8_t* data = (uint8_t*)lock->data;
 		for (size_t i = 0; i < lock->count; i++)
 		{
-			if (lock->type == GN_TYPE_NUMBER)
+			switch (lock->type)
+			{
+			case GN_TYPE_NUMBER:
 			{
 				GNNumber num = init_data[i].cast<GNNumber>();
 				*((GNNumber*)data) = num;
-			}else if (lock->type == GN_TYPE_INDEX)
+			}break;
+			case GN_TYPE_INTEGER:
+			{
+				GNInteger num = init_data[i].cast<GNInteger>();
+				*((GNInteger*)data) = num;
+			}break;
+			case GN_TYPE_INDEX:
 			{
 				GNIndex num = init_data[i].cast<GNIndex>();
 				*((GNIndex*)data) = num;
+			}break;
+			case GN_TYPE_INDEX_INDEX:
+			{
+				typedef pybind11::tuple tuple;
+				tuple& link_raw = init_data[i].cast<tuple>();
+
+				if (link_raw.size() < 2)
+					continue;
+
+				GNLink link;
+				link.input = link_raw[0].cast<GNIndex>();
+				link.output = link_raw[1].cast<GNIndex>();
+				*((GNLink*)data) = link;
+			}break;
 			}
 			data += lock->element_size;
 		}
 		G->stream->unlock(lock);
 	}
+
 	void clear() { stream_->system->stream->clear(stream_);	}
+
+	PyGNStreamLockData* lock(GNIndex start, GNIndex count, size_t flags)
+	{
+		struct GNStreamLockData* lock_data = stream_->system->stream->lock(stream_, start, count, flags);
+		return new PyGNStreamLockData(lock_data);
+	}
 protected:
 	struct GNStream* stream_;
 };
@@ -143,7 +267,12 @@ public:
 	{
 		G = gexnet_native_init(NULL);
 	}
-	PyGNStream* create_stream(GNType type, const pybind11::list& init_data)
+	PyGNStream* create_stream(GNType type, GNIndex size)
+	{
+		struct GNStream* stream = G->create_stream(G, type, size, NULL);
+		return new PyGNStream(stream);
+	}
+	PyGNStream* create_stream_data(GNType type, const pybind11::list& init_data)
 	{
 		struct GNStream* stream = G->create_stream(G, type, init_data.size(), NULL);
 		PyGNStream* pyStream = new PyGNStream(stream);
@@ -168,13 +297,22 @@ void bind_network(py::module &m)
 	m.attr("GN_TYPE_LINK") = GN_TYPE_LINK;
 	m.attr("GN_TYPE_NUMBER") = GN_TYPE_NUMBER;
 
+	py::class_<PyGNStreamLockData>(m, "GNStreamLockData")
+		.def("unlock", &PyGNStreamLockData::unlock)
+		.def_readwrite("data", &PyGNStreamLockData::pydata)
+		.def_property_readonly("type", &PyGNStreamLockData::type)
+		.def_property_readonly("count", &PyGNStreamLockData::count)
+		.def_property_readonly("element_size", &PyGNStreamLockData::element_size);
+
 	py::class_<PyGNStream>(m, "GNStream")
 		.def("clear", &PyGNStream::clear)
-		.def("load", &PyGNStream::load);
+		.def("load", &PyGNStream::load)
+		.def("lock", &PyGNStream::lock);
 
 	py::class_<PyGNSystem>(m, "GNSystem")
 		.def(py::init<>())
-		.def("create_stream", &PyGNSystem::create_stream);
+		.def("create_stream", &PyGNSystem::create_stream)
+		.def("create_stream_data", &PyGNSystem::create_stream_data);
 	//m.def("network_create", &py_network_create);
 	/*
 	//py::make_iterator
