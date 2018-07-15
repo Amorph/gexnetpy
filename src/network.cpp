@@ -193,6 +193,7 @@ public:
 
 class PyGNStream
 {
+	friend class PyGNSystem;
 public:
 	PyGNStream(struct GNStream* stream)
 		:stream_(stream)
@@ -204,7 +205,7 @@ public:
 		stream_->system->stream->destroy(stream_);
 	}
 
-	void load(const pybind11::list& init_data)
+	void set_stream_data(const pybind11::list& init_data)
 	{
 		struct GNSystem* G = stream_->system;
 		GNStreamLockData* lock = G->stream->lock(stream_, 0, init_data.size(), 0);
@@ -248,6 +249,12 @@ public:
 	}
 
 	void clear() { stream_->system->stream->clear(stream_);	}
+	void copy(PyGNStream* input) { stream_->system->stream->copy(stream_, input->stream_); }
+	void add(PyGNStream* input) { stream_->system->stream->add(stream_, input->stream_); }
+	void set_stream_data_indexed(PyGNStream* indexes, PyGNStream* data) { stream_->system->stream->set_stream_data_indexed(stream_, indexes->stream_, data->stream_); }
+	void get_stream_data_indexed(PyGNStream* indexes, PyGNStream* output) { stream_->system->stream->get_stream_data_indexed(stream_, indexes->stream_, output->stream_); }
+	void multiply_add_links(PyGNStream* links, PyGNStream* x, PyGNStream* weights) { stream_->system->stream->multiply_add_links(stream_, links->stream_, x->stream_, weights->stream_); }
+	void process_stream(PyGNStream* input, size_t function) { stream_->system->stream->process_stream(stream_, input->stream_, function); }
 
 	PyGNStreamLockData* lock(GNIndex start, GNIndex count, size_t flags)
 	{
@@ -277,10 +284,25 @@ public:
 		struct GNStream* stream = G->create_stream(G, type, init_data.size(), NULL);
 		PyGNStream* pyStream = new PyGNStream(stream);
 
-		pyStream->load(init_data);
+		pyStream->set_stream_data(init_data);
 
 		return pyStream;
 	}
+	GNIndex compute_node_count(PyGNStream* stream)
+	{
+		return G->compute->node_count(stream->stream_);
+	}
+	pybind11::tuple compute_in_out(PyGNStream* stream, GNIndex node_count)
+	{
+		GNStream *in, *out;
+		if (!G->compute->in_out(stream->stream_, node_count, &in, &out))
+			return pybind11::none();
+		pybind11::tuple result(2);
+		result[0] = pybind11::cast(new PyGNStream(in));
+		result[1] = pybind11::cast(new PyGNStream(out));
+		return result;
+	}
+
 protected:
 	struct GNSystem* G;
 };
@@ -296,6 +318,7 @@ void bind_network(py::module &m)
 	m.attr("GN_TYPE_INDEX_INDEX") = GN_TYPE_INDEX_INDEX;
 	m.attr("GN_TYPE_LINK") = GN_TYPE_LINK;
 	m.attr("GN_TYPE_NUMBER") = GN_TYPE_NUMBER;
+	m.attr("GN_FUNCTION_TANH") = GN_FUNCTION_TANH;
 
 	py::class_<PyGNStreamLockData>(m, "GNStreamLockData")
 		.def("unlock", &PyGNStreamLockData::unlock)
@@ -306,13 +329,21 @@ void bind_network(py::module &m)
 
 	py::class_<PyGNStream>(m, "GNStream")
 		.def("clear", &PyGNStream::clear)
-		.def("load", &PyGNStream::load)
+		.def("set_stream_data", &PyGNStream::set_stream_data)
+		.def("copy", &PyGNStream::copy)
+		.def("set_stream_data_indexed", &PyGNStream::set_stream_data_indexed)
+		.def("get_stream_data_indexed", &PyGNStream::get_stream_data_indexed)
+		.def("multiply_add_links", &PyGNStream::multiply_add_links)
+		.def("add", &PyGNStream::add)
+		.def("process_stream", &PyGNStream::process_stream)
 		.def("lock", &PyGNStream::lock);
 
 	py::class_<PyGNSystem>(m, "GNSystem")
 		.def(py::init<>())
 		.def("create_stream", &PyGNSystem::create_stream)
-		.def("create_stream_data", &PyGNSystem::create_stream_data);
+		.def("create_stream_data", &PyGNSystem::create_stream_data)
+		.def("compute_node_count", &PyGNSystem::compute_node_count)
+		.def("compute_in_out", &PyGNSystem::compute_in_out);
 	//m.def("network_create", &py_network_create);
 	/*
 	//py::make_iterator
