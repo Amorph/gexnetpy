@@ -205,6 +205,18 @@ public:
 		stream_->system->stream->destroy(stream_);
 	}
 
+	GNType type() const { return stream_ ? stream_->type : GN_TYPE_UNKNOWN; }
+	GNIndex count() const { return stream_ ? stream_->count : 0; }
+	pybind11::list get_stream_data()
+	{
+		PyGNStreamLockData* lock = this->lock(0, 0, 0);
+
+		pybind11::list res = lock->pydata;
+		delete lock;
+
+		return res;
+	}
+
 	void set_stream_data(const pybind11::list& init_data)
 	{
 		struct GNSystem* G = stream_->system;
@@ -328,8 +340,13 @@ void bind_network(py::module &m)
 		.def_property_readonly("element_size", &PyGNStreamLockData::element_size);
 
 	py::class_<PyGNStream>(m, "GNStream")
+		.def_property_readonly("type", &PyGNStream::type)
+		.def_property_readonly("count", &PyGNStream::count)
+		.def_property_readonly("data", &PyGNStream::get_stream_data)
+
 		.def("clear", &PyGNStream::clear)
 		.def("set_stream_data", &PyGNStream::set_stream_data)
+		.def("get_stream_data", &PyGNStream::get_stream_data)
 		.def("copy", &PyGNStream::copy)
 		.def("set_stream_data_indexed", &PyGNStream::set_stream_data_indexed)
 		.def("get_stream_data_indexed", &PyGNStream::get_stream_data_indexed)
