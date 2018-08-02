@@ -173,7 +173,7 @@ public:
 			{
 				pybind11::tuple& link = pydata[i].cast<pybind11::tuple>();
 				data[i].input = link[0].cast<GNIndex>();
-				data[i].input = link[1].cast<GNIndex>();
+				data[i].output = link[1].cast<GNIndex>();
 			}
 		}break;
 		}
